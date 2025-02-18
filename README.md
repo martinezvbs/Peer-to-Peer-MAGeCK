@@ -18,7 +18,7 @@ The workshop is designed to be accessible to beginners in CRISPR screening analy
 
 ## Paper
 We will be discussing the following paper during the session:
-In vivo CRISPR screens identify a dual function of MEN1 in regulating tumor–microenvironment interactions
+_In vivo CRISPR screens identify a dual function of MEN1 in regulating tumor–microenvironment interactions_
 Nat Genet 56, 1890–1902 (2024). https://doi.org/10.1038/s41588-024-01874-9
 
 ## Packages
