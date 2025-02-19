@@ -1,0 +1,309 @@
+---
+title: "Peer-to-Peer-MAGeCK"
+author: "Juan Martinez"
+date: "2025-02-17"
+output: html_document
+---
+
+# Install libraries
+```{r}
+
+# Directly from R
+install.packages("ggpubr")
+install.packages('corrplot')
+install.packages("RColorBrewer")
+install.packages("tidyverse")
+install.packages("ggrepel")
+install.packages("ggstatsplot")
+
+# From Bioconductor
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("MAGeCKFlute")
+
+
+```
+
+# Load libraries
+```{r Libraries, message=FALSE, warning=FALSE}
+
+library(ggpubr)
+library(corrplot)
+library(RColorBrewer)
+library(tidyverse)
+library(MAGeCKFlute)
+library(ggrepel)
+library(ggstatsplot)
+
+```
+
+# Load MAGeCK data
+```{r}
+
+# Load count summary and normalized count data
+count_summary <- read.delim("FASTQ/A549.countsummary.txt", header = T)
+raw_count_data <- read.delim("FASTQ/A549.count.txt", header = T) 
+norm_count_data <- read.delim("FASTQ/A549.count_normalized.txt", header = T) 
+
+```
+
+# Initial QC
+```{r}
+
+# Add Condition column
+count_summary$Condition <- c(
+  rep("FST", 4),  # FST1, FST2, FST3, FST4
+  rep("MT0", 2),  # MT0R1, MT0R2
+  rep("MT1", 2),  # MT1R1, MT1R2
+  rep("MT2", 2),  # MT2R1, MT2R2
+  rep("MT5", 2),  # MT5R1, MT5R2
+  rep("ST2", 2),  # ST2R1, ST2R2
+  rep("BST", 2),  # BST2R1, BST2R2
+  rep("NST", 2),  # NST2R1, NST2R2
+  "Plasmid"       # Plasmid
+)
+
+# Define color scheme
+color_scheme <- c(
+  "MT0" = "#1f5f61", # Pre Dox 2D // Tumor // Control
+  "MT1" = "#5c85a3", # Dox // 2D // 1 passages // Tumor
+  "MT2" = "#a17373", # Dox // 2D // 2 passages // Tumor
+  "MT5" = "#3e4772", # Dox // 2D // 5 passages // Tumor
+  "ST2" = "#c47a53", # Dox // 3D // Spheroid // RPMI (Cancer cell medium) // Cluster
+  "BST" = "#72536a", # Dox // 3D // Spheroid // NB (Neuron cell medium) // Tumor
+  "NST" = "#8f4731", # Dox // 3D // Spheroid // Tumor + Neurons // Cluster
+  "Plasmid" = "#b2a8b8"  # Adding a color for Plasmid
+)
+
+# Define the desired order of labels
+ordered_labels <- c("Plasmid", 
+                   "MT0R1", "MT0R2",
+                   "MT1R1", "MT1R2", 
+                   "MT2R1", "MT2R2",
+                   "MT5R1", "MT5R2", 
+                   "ST2R1", "ST2R2",
+                   "BST2R1", "BST2R2", 
+                   "NST2R1", "NST2R2")
+
+# Gini Index
+p1 <- count_summary %>%
+  # Filter to only include rows with Labels in the ordered_labels vector
+  filter(Label %in% ordered_labels) %>%
+  # Convert Label to factor with specific order
+  mutate(Label = factor(Label, levels = ordered_labels)) %>%
+  ggbarplot(
+    x = "Label", y = "GiniIndex",
+    fill = "Condition", lab.pos = "out", xlab = "Sample",
+    position = position_dodge(),
+    ggtheme = theme_pubclean(base_size = 18),
+    palette = color_scheme
+  ) +
+  theme(legend.position = "right", 
+        axis.text.x = element_text(angle = 90))
+
+# Save the plot
+ggsave(plot = p1, "SAM.vitro.gini.pdf", width = 10, height = 6, units = "in", dpi = 300)
+
+
+# Missed sgRNA
+
+# Define color scheme
+color_scheme <- c(
+  "MT0" = "#1f5f61", # Pre Dox 2D // Tumor // Control
+  "MT1" = "#5c85a3", # Dox // 2D // 1 passages // Tumor
+  "MT2" = "#a17373", # Dox // 2D // 2 passages // Tumor
+  "MT5" = "#3e4772", # Dox // 2D // 5 passages // Tumor
+  "ST2" = "#c47a53", # Dox // 3D // Spheroid // RPMI (Cancer cell medium) // Cluster
+  "BST" = "#72536a", # Dox // 3D // Spheroid // NB (Neuron cell medium) // Tumor
+  "NST" = "#8f4731", # Dox // 3D // Spheroid // Tumor + Neurons // Cluster
+  "Plasmid" = "#b2a8b8"  # Adding a color for Plasmid
+)
+
+# Define the sample order
+sample_order <- c("Plasmid", "MT0R1", "MT0R2",
+                 "MT1R1", "MT1R2", "MT2R1", "MT2R2",
+                 "MT5R1", "MT5R2", "ST2R1", "ST2R2",
+                 "BST2R1", "BST2R2", "NST2R1", "NST2R2")
+
+# Filter the data to include only the samples we want
+count_summary_filtered <- count_summary %>%
+  filter(Label %in% sample_order) %>%
+  mutate(Label = factor(Label, levels = sample_order))
+
+# Calculate missed sgrnas
+count_summary_filtered$Missed <- log10(count_summary_filtered$Zerocounts)
+
+# Create the plot
+missed_plot <- ggbarplot(count_summary_filtered,
+          x = "Label", 
+          y = "Zerocounts",
+          fill = "Condition", 
+          lab.pos = "out", 
+          xlab = "Sample",
+          position = position_dodge(),
+          ggtheme = theme_pubclean(base_size = 18),
+          palette = color_scheme) +  # Add the color palette
+  theme(legend.position = "right", 
+        axis.text.x = element_text(angle = 90))
+
+# Save the plot
+ggsave("SAM.missgrna.pdf", 
+       plot = missed_plot,
+       width = 10, 
+       height = 6, 
+       units = "in", 
+       dpi = 300)
+
+
+# Define the sample order
+sample_order <- c("Plasmid", "MT0R1", "MT0R2",
+                 "MT1R1", "MT1R2", "MT2R1", "MT2R2",
+                 "MT5R1", "MT5R2", "ST2R1", "ST2R2",
+                 "BST2R1", "BST2R2", "NST2R1", "NST2R2")
+
+# Calculate mapped and unmapped reads with percentages
+plot_data <- count_summary_filtered %>%
+  mutate(
+    Mapped = round(Reads * Percentage),
+    Unmapped = Reads - Mapped,
+    Mapped_Percentage = round(Percentage * 100),
+    Unmapped_Percentage = round((1 - Percentage) * 100)
+  ) %>%
+  select(Label, Mapped, Unmapped, Mapped_Percentage, Unmapped_Percentage) %>%
+  tidyr::pivot_longer(cols = c(Mapped, Unmapped), names_to = "category", values_to = "count") %>%
+  mutate(
+    Label = factor(Label, levels = sample_order),
+    category = factor(category, levels = c("Unmapped", "Mapped")),
+    percentage = ifelse(category == "Mapped", Mapped_Percentage, Unmapped_Percentage)
+  )
+
+# Map ratio plot
+p2 <- ggbarplot(plot_data, x = "Label", y = "count",
+          fill = "category", color = "category",
+          palette = c("#813e3e", "#005073"),  # Using colors from your scheme
+          position = position_stack(),
+          xlab = "", ylab = "Reads") +
+  geom_text(aes(label = sprintf("%d%%", percentage), group = category), 
+            position = position_stack(vjust = 0.5), color = "white", size = 3.5) + # Increased from 2.5 to 4
+  theme_pubclean(base_size = 18) +
+  scale_y_continuous(
+    breaks = seq(0, 8e6, by = 2e6),
+    labels = function(x) paste0(x/1e6, "M"),
+    limits = c(0, 8e6)) + 
+  theme(legend.position = "right", 
+        axis.text.x = element_text(angle = 90))
+
+# Save the plot
+ggsave(plot = p2, "SAM.map.pdf", width = 11, height = 7, units = "in", dpi = 300)
+
+```
+
+# Define colors and order for the samples
+```{r}
+
+# Add a column with the Day information
+count_summary$Day <- c(rep("D0", 2),  # D0R1 - D0R2
+                       rep("D21", 7)) # IVR1 - IVR2, XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5
+
+# Add a column with the Type of culture information
+count_summary$Type <- c(rep("In Vitro", 4),  # D0R1 - D0R2,  IVR1 - IVR2
+                        rep("In Vivo", 5)) # XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5
+
+# Define color scheme
+Colors <- c( "D0R1" = "#9f9f9f", "D0R2" = "#424242",
+             "IVR1" = "#5f638f","IVR2" = "#36234e",
+             "XENOR1" = "#a3d8ff", "XENOR2" = "#80cfff", 
+             "XENOR3" = "#4a7ebb", "XENOR4" = "#1f4c7a", "XENOR5" = "#0f2e4d")
+
+# Define the desired order of labels
+Order <- c("D0R1", "D0R2", 
+           "IVR1", "IVR2", 
+           "XENOR1", "XENOR2", 
+           "XENOR3", "XENOR4", "XENOR5")
+
+```
+
+# Gini index
+```{r}
+
+count_summary %>%
+  # Filter to only include rows with Labels in the Order vector
+  filter(Label %in% Order) %>%
+  # Convert Label to factor with specific order
+  mutate(Label = factor(Label, levels = Order)) %>%
+  ggbarplot( x = "Label", y = "GiniIndex",
+             fill = "Label", lab.pos = "out", xlab = "Sample",
+             ggtheme = theme_pubclean(base_size = 18),
+             palette = Colors) +
+  theme(legend.position = "right")
+
+# Save the plot
+ggsave("MAGeCK-Gini-Index.pdf", 
+       width = 12, 
+       height = 6, 
+       units = "in",
+       dpi = 300)
+
+```
+
+# Lost sgRNA
+```{r}
+
+# Create the plot
+missed_plot <- ggbarplot(count_summary,
+                         x = "Label", 
+                         y = "Zerocounts",
+                         fill = "Label", 
+                         lab.pos = "out", 
+                         xlab = "Sample",
+                         ggtheme = theme_pubclean(base_size = 18),
+                         palette = Colors) +
+  theme(legend.position = "right")
+
+# Save the plot
+ggsave("MAGeCK-Lost-sgRNAs.pdf", 
+       plot = missed_plot,
+       width = 12, 
+       height = 6, 
+       units = "in", 
+       dpi = 300)
+
+```
+
+# Ratio of mapped reads
+```{r}
+
+# Calculate mapped and unmapped reads with percentages
+plot_data <- count_summary %>%
+  mutate(Mapped = round(Reads * Percentage),
+         Unmapped = Reads - Mapped,
+         Mapped_Percentage = round(Percentage * 100),
+         Unmapped_Percentage = round((1 - Percentage) * 100)) %>%
+  select(Label, Mapped, Unmapped, Mapped_Percentage, Unmapped_Percentage) %>%
+  tidyr::pivot_longer(cols = c(Mapped, Unmapped), names_to = "category", values_to = "count") %>%
+  mutate(Label = factor(Label, levels = Order),
+         category = factor(category, levels = c("Unmapped", "Mapped")),
+         percentage = ifelse(category == "Mapped", Mapped_Percentage, Unmapped_Percentage))
+
+# Map ratio plot
+ggbarplot(plot_data, x = "Label", y = "count",
+          fill = "category", color = "category",
+          palette = c("#813e3e", "#005073"),
+          position = position_stack(),
+          xlab = "", ylab = "Reads") +
+  geom_text(aes(label = sprintf("%d%%", percentage), group = category), 
+            position = position_stack(vjust = 0.5), color = "white", size = 3.5) +
+  theme_pubclean(base_size = 18) +
+  theme(legend.position = "right")
+
+# Save the plot
+ggsave("MAGeCK-Mapped-Ratio.pdf", 
+       width = 12, 
+       height = 7, 
+       units = "in", 
+       dpi = 300)
+
+
+```
+
