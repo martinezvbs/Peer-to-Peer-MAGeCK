@@ -5,6 +5,7 @@
 # This will allow you to use a third-party aligner to map reads to the library with mismatches, providing more usable reads for the analysis.
 
 # (1) Determine the 5' and 3' trimming length and sgRNA length with cutadapt
+module purge
 module load cutadapt/3.4-GCCcore-10.2.0
 
 # Create output directory
@@ -52,7 +53,7 @@ for input_file in *.fastq.gz; do
     echo "Mapping ${input_file} to library..."
 
     # Run Bowtie2
-    bowtie2 -x EpiDrug_library -U "${input_file}" --np 0 --norc -N 2 | samtools view -bS - | samtools sort -o "${output_file}"
+    bowtie2 -x EpiDrug_library -U "${input_file}" | samtools view -bS - | samtools sort -o "${output_file}"
 done
 
 # (5) Run MAGeCK count module to collect read counts from BAM files
@@ -68,15 +69,15 @@ SGRNA_LIST="EpiDrug_library.csv"
 
 # FASTQ files
 FASTQ=(
-    "Mapped/trimmed_A549_D0_R1.bam"
-    "Mapped/trimmed_A549_D0_R2.bam"
-    "Mapped/trimmed_A549_InVitro_R1.bam"
-    "Mapped/trimmed_A549_InVitro_R2.bam"
-    "Mapped/trimmed_A549_XENO_R1.bam"
-    "Mapped/trimmed_A549_XENO_R2.bam"
-    "Mapped/trimmed_A549_XENO_R3.bam"
-    "Mapped/trimmed_A549_XENO_R4.bam"
-    "Mapped/trimmed_A549_XENO_R5.bam")
+    "D0R1.fastq.gz"
+    "D0R2.fastq.gz"
+    "IVR1.fastq.gz"
+    "IVR2.fastq.gz"
+    "XENOR1.fastq.gz"
+    "XENOR2.fastq.gz"
+    "XENOR3.fastq.gz"
+    "XENOR4.fastq.gz"
+    "XENOR5.fastq.gz")
 
 # Generate a count table from raw FASTQ files for the first group
 mageck count -l "$SGRNA_LIST" -n A549 \
