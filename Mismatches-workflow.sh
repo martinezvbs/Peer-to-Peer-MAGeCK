@@ -23,10 +23,9 @@ for input_file in *.fastq.gz; do
       -g "TATCTTGTGGAAAGGACGAAACACC" \
       -o "${output_file}" \
       "${input_file}" \
-      --minimum-length=15 \
+      --minimum-length=18 \
       --error-rate=0.1 \
       --cores=0 \
-      --trim-n \
       --quality-cutoff=20
 done
 

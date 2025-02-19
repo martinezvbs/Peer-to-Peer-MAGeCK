@@ -1,4 +1,5 @@
 # Description: Download FASTQ files from the SRA using fasterq-dump
+module load SRA-Toolkit/3.1.1-gompi-2022b
 
 # Create a directory for the fastq files
 mkdir -p FASTQ
