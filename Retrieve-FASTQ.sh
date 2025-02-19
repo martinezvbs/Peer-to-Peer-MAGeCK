@@ -29,7 +29,7 @@ for sra_id in "${sra_ids[@]}"; do
         "$sra_id"
 done
 
-# Optional: Compress the resulting fastq files to save space
+# Compress the resulting fastq files to save space
 echo "Compressing fastq files..."
 # shellcheck disable=SC2035
 gzip *.fastq
