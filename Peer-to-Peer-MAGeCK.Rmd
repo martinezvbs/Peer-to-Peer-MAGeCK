@@ -1,7 +1,7 @@
 ---
 title: "Peer-to-Peer-MAGeCK"
-author: "Juan Martinez"
-date: "2025-02-17"
+author: "Juan Martinez-Villalobos"
+date: "2025-02-2020"
 output: html_document
 ---
 
