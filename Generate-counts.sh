@@ -27,11 +27,11 @@ mageck count -l "$SGRNA_LIST" -n A549 \
 # Run MAGeCK RRA tests for various comparisons
 declare -A TEST=(
     ["D0-IV-v-D21-IV"]="D0R1,D0R2 IVR1,IVR2"
-    ["D0-IV-v-D21-XE"]="D0R1,D0R2 XENOR1,XENOR2,XENOR3,XENOR4,XENOR5"
-    ["D21-IV-v-D21-XE"]="IVR1,IVR2 XENOR1,XENOR2,XENOR3,XENOR4,XENOR5")
+    ["D0-IV-v-D21-XE"]="D0R1,D0R2 XENOR1,XENOR2,XENOR3"
+    ["D21-IV-v-D21-XE"]="IVR1,IVR2 XENOR1,XENOR2,XENOR3")
 
 for test_name in "${!TEST[@]}"; do
     IFS=' ' read -r -a test_comparison <<< "${TEST[$test_name]}"
     mageck test -k A549.count.txt -c "${test_comparison[0]}" -t "${test_comparison[1]}" \
-    --norm-method total --adjust-method fdr --pdf-report -n "$test_name"
+    --norm-method total --pdf-report -n "$test_name"
 done
