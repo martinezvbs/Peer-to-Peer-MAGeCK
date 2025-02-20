@@ -46,19 +46,19 @@ library(ggstatsplot)
 # Load the count summary file
 # This file contains quality metrics about your CRISPR screen sequencing
 # Includes: total reads, mapped reads, gRNA representation, etc.
-count_summary <- read.delim("FASTQ/A549.countsummary.txt", header = T)
+count_summary <- read.delim("A549.countsummary.txt", header = T)
 # Note: header = T tells R that the first row contains column names
 
 # Load the raw count data file
 # This contains the actual read counts for each guide RNA across all samples
 # Format is typically: sgRNA ID in first column, followed by count columns for each sample
-raw_count_data <- read.delim("FASTQ/A549.count.txt", header = T) 
+raw_count_data <- read.delim("A549.count.txt", header = T) 
 # These are the raw numbers directly from the sequencer, before any normalization
 
 # Load the normalized count data
 # These counts have been adjusted to account for sequencing depth differences
 # Normalization allows for fair comparison between samples with different total read counts
-norm_count_data <- read.delim("FASTQ/A549.count_normalized.txt", header = T)
+norm_count_data <- read.delim("A549.count_normalized.txt", header = T)
 # Normalized counts are essential for accurate statistical analysis
 
 ```
@@ -71,16 +71,16 @@ norm_count_data <- read.delim("FASTQ/A549.count_normalized.txt", header = T)
 # Type: Negative selection screen - identifies genes whose knockout reduces cell fitness
 # Dropouts (negative selection) = essential genes required for cell survival
 # Enriched (positive selection) = genes that inhibit growth when present
-in_vitro_comparison <- read.delim("FASTQ/D0-IV-v-D21-IV.gene_summary.txt")
-in_vitro_sgRNAs <- read.delim("FASTQ/D0-IV-v-D21-IV.sgrna_summary.txt")
+in_vitro_comparison <- read.delim("D0-IV-v-D21-IV.gene_summary.txt")
+in_vitro_sgRNAs <- read.delim("D0-IV-v-D21-IV.sgrna_summary.txt")
 
 # In vivo comparison - Day 0 vs Day 21 Xenograft
 # Purpose: Identify genes affecting tumor growth in mouse xenografts
 # Type: Negative selection screen in immunodeficient NSG mice
 # Dropouts (negative selection) = genes required for tumor establishment/growth in vivo
 # Enriched (positive selection) = tumor suppressor genes in immunodeficient context
-in_vivo_comparison <- read.delim("FASTQ/D0-IV-v-D21-XE.gene_summary.txt")
-in_vivo_sgRNAs <- read.delim("FASTQ/D0-IV-v-D21-XE.sgrna_summary.txt")
+in_vivo_comparison <- read.delim("D0-IV-v-D21-XE.gene_summary.txt")
+in_vivo_sgRNAs <- read.delim("D0-IV-v-D21-XE.sgrna_summary.txt")
 
 # Direct comparison - Day 21 in vitro vs Day 21 Xenograft
 # Purpose: Identify genes with differential effects between cell culture and tumor
@@ -88,16 +88,16 @@ in_vivo_sgRNAs <- read.delim("FASTQ/D0-IV-v-D21-XE.sgrna_summary.txt")
 # Enriched (positive selection) = genes like MEN1 that promote tumor growth in NSG mice
 #                                 but don't affect in vitro growth (TME-dependent oncogenes)
 # Dropouts (negative selection) = genes more essential in vitro than in vivo
-direct_comparison <- read.delim("FASTQ/D21-IV-v-D21-XE.gene_summary.txt")
-direct_comparison_sgRNAs <- read.delim("FASTQ/D21-IV-v-D21-XE.sgrna_summary.txt")
+direct_comparison <- read.delim("D21-IV-v-D21-XE.gene_summary.txt")
+direct_comparison_sgRNAs <- read.delim("D21-IV-v-D21-XE.sgrna_summary.txt")
 
 ```
 
 # Run the default pipeline
 ```{r}
 
-file1 = "FASTQ/D0-IV-v-D21-IV.gene_summary.txt"
-file2 = "FASTQ/D0-IV-v-D21-IV.sgrna_summary.txt"
+file1 = "D0-IV-v-D21-IV.gene_summary.txt"
+file2 = "D0-IV-v-D21-IV.sgrna_summary.txt"
 
 # Run FluteRRA with both gene summary file and sgRNA summary file
 FluteRRA(file1, 
@@ -110,8 +110,8 @@ FluteRRA(file1,
          omitEssential = T,
          incorporateDepmap = T)
 
-file1 = "FASTQ/D21-IV-v-D21-XE.gene_summary.txt"
-file2 = "FASTQ/D21-IV-v-D21-XE.sgrna_summary.txt"
+file1 = "D21-IV-v-D21-XE.gene_summary.txt"
+file2 = "D21-IV-v-D21-XE.sgrna_summary.txt"
 
 # Run FluteRRA with both gene summary file and sgRNA summary file
 FluteRRA(file1, 
