@@ -1,12 +1,14 @@
 ---
 title: "Peer-to-Peer-MAGeCK"
-author: "Juan Martinez-Villalobos"
+author: "Juan Martinez"
 date: "2025-02-20"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 # Install libraries
-```{r}
+```{r message=FALSE, warning=FALSE}
 
 # Directly from R
 install.packages("ggpubr")
@@ -39,122 +41,683 @@ library(ggstatsplot)
 ```
 
 # Load MAGeCK data
+```{r warning=FALSE}
+
+# Load the count summary file
+# This file contains quality metrics about your CRISPR screen sequencing
+# Includes: total reads, mapped reads, gRNA representation, etc.
+count_summary <- read.delim("A549.countsummary.txt", header = T)
+# Note: header = T tells R that the first row contains column names
+
+# Load the raw count data file
+# This contains the actual read counts for each guide RNA across all samples
+# Format is typically: sgRNA ID in first column, followed by count columns for each sample
+raw_count_data <- read.delim("A549.count.txt", header = T) 
+# These are the raw numbers directly from the sequencer, before any normalization
+
+# Load the normalized count data
+# These counts have been adjusted to account for sequencing depth differences
+# Normalization allows for fair comparison between samples with different total read counts
+norm_count_data <- read.delim("A549.count_normalized.txt", header = T)
+# Normalized counts are essential for accurate statistical analysis
+
+```
+
+# Load MAGeCK RRA 
 ```{r}
 
-# Load count summary and normalized count data
-count_summary <- read.delim("FASTQ/A549.countsummary.txt", header = T)
-raw_count_data <- read.delim("FASTQ/A549.count.txt", header = T) 
-norm_count_data <- read.delim("FASTQ/A549.count_normalized.txt", header = T) 
+# In vitro comparison - Day 0 vs Day 21 (cell culture)
+# Purpose: Identify essential genes for cell survival/proliferation in vitro
+# Type: Negative selection screen - identifies genes whose knockout reduces cell fitness
+# Dropouts (negative selection) = essential genes required for cell survival
+# Enriched (positive selection) = genes that inhibit growth when present
+in_vitro_comparison <- read.delim("D0-IV-v-D21-IV.gene_summary.txt")
+in_vitro_sgRNAs <- read.delim("D0-IV-v-D21-IV.sgrna_summary.txt")
+
+# In vivo comparison - Day 0 vs Day 21 Xenograft
+# Purpose: Identify genes affecting tumor growth in mouse xenografts
+# Type: Negative selection screen in immunodeficient NSG mice
+# Dropouts (negative selection) = genes required for tumor establishment/growth in vivo
+# Enriched (positive selection) = tumor suppressor genes in immunodeficient context
+in_vivo_comparison <- read.delim("D0-IV-v-D21-XE.gene_summary.txt")
+in_vivo_sgRNAs <- read.delim("D0-IV-v-D21-XE.sgrna_summary.txt")
+
+# Direct comparison - Day 21 in vitro vs Day 21 Xenograft
+# Purpose: Identify genes with differential effects between cell culture and tumor
+# Type: Comparative screen revealing context-dependent gene functions
+# Enriched (positive selection) = genes like MEN1 that promote tumor growth in NSG mice
+#                                 but don't affect in vitro growth (TME-dependent oncogenes)
+# Dropouts (negative selection) = genes more essential in vitro than in vivo
+direct_comparison <- read.delim("D21-IV-v-D21-XE.gene_summary.txt")
+direct_comparison_sgRNAs <- read.delim("D21-IV-v-D21-XE.sgrna_summary.txt")
+
+```
+
+# Run the default pipeline
+```{r}
+
+file1 = "D0-IV-v-D21-IV.gene_summary.txt"
+file2 = "D0-IV-v-D21-IV.sgrna_summary.txt"
+
+# Run FluteRRA with both gene summary file and sgRNA summary file
+FluteRRA(file1, 
+         file2, 
+         proj="InVitro", 
+         organism="hsa", 
+         outdir = "./", 
+         top = 10,
+         scale_cutoff = 1,
+         omitEssential = T,
+         incorporateDepmap = T)
+
+file1 = "D21-IV-v-D21-XE.gene_summary.txt"
+file2 = "D21-IV-v-D21-XE.sgrna_summary.txt"
+
+# Run FluteRRA with both gene summary file and sgRNA summary file
+FluteRRA(file1, 
+         file2, 
+         proj="InVitro", 
+         organism="hsa", 
+         outdir = "./", 
+         top = 10,
+         scale_cutoff = 1,
+         omitEssential = F,
+         incorporateDepmap = T)
 
 ```
 
 
-
 # Define colors and order for the samples
-```{r}
+```{r warning=FALSE}
+# This section prepares metadata and visual settings for plotting
 
 # Add a column with the Day information
-count_summary$Day <- c(rep("D0", 2),  # D0R1 - D0R2
-                       rep("D21", 7)) # IVR1 - IVR2, XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5
+# This categorizes samples by timepoint: Day 0 or Day 21
+count_summary$Day <- c(rep("D0", 2),  # D0R1 - D0R2 (two Day 0 replicates)
+                      rep("D21", 7)) # IVR1 - IVR2, XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5 (all Day 21 samples)
+# Note: rep() repeats "D0" 2 times and "D21" 7 times, matching our 9 total samples
 
 # Add a column with the Type of culture information
-count_summary$Type <- c(rep("In Vitro", 4),  # D0R1 - D0R2,  IVR1 - IVR2
-                        rep("In Vivo", 5)) # XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5
+# This categorizes samples by experimental condition: in vitro vs in vivo
+count_summary$Type <- c(rep("In Vitro", 4),  # D0R1 - D0R2, IVR1 - IVR2 (all in vitro samples)
+                       rep("In Vivo", 5))   # XENOR1 - XENOR2 - XENOR3 - XENOR4 - XENOR5 (all xenograft samples)
+# This will allow us to compare growth conditions in our analysis
 
 # Define color scheme
-Colors <- c( "D0R1" = "#9f9f9f", "D0R2" = "#424242",
-             "IVR1" = "#5f638f","IVR2" = "#36234e",
-             "XENOR1" = "#a3d8ff", "XENOR2" = "#80cfff", 
-             "XENOR3" = "#4a7ebb", "XENOR4" = "#1f4c7a", "XENOR5" = "#0f2e4d")
+# Each sample gets a unique color for visualization
+# Gray scale for Day 0, purple for in vitro, blue gradient for xenografts
+Colors <- c("D0R1" = "#9f9f9f", "D0R2" = "#424242",        # Light and dark gray for Day 0
+           "IVR1" = "#5f638f", "IVR2" = "#36234e",        # Purple shades for in vitro
+           "XENOR1" = "#a3d8ff", "XENOR2" = "#80cfff",    # Light blue shades
+           "XENOR3" = "#4a7ebb", "XENOR4" = "#1f4c7a",    # Medium blue shades  
+           "XENOR5" = "#0f2e4d")                          # Dark blue for xenografts
 
 # Define the desired order of labels
-Order <- c("D0R1", "D0R2", 
-           "IVR1", "IVR2", 
-           "XENOR1", "XENOR2", 
-           "XENOR3", "XENOR4", "XENOR5")
+# This ensures samples appear in a logical order in plots and tables
+# Order: Day 0 samples first, then in vitro Day 21, then xenografts
+Order <- c("D0R1", "D0R2",           # Day 0 replicates
+          "IVR1", "IVR2",           # In vitro replicates
+          "XENOR1", "XENOR2",       # Xenograft replicates 1-2
+          "XENOR3", "XENOR4",       # Xenograft replicates 3-4
+          "XENOR5")                 # Xenograft replicate 5
+# This ordering helps maintain consistency across all visualizations
 
 ```
 
 # Gini index
-```{r}
+```{r warning=FALSE}
 
+# Create a bar plot of Gini Index values and save it as a PDF
 count_summary %>%
-  # Filter to only include rows with Labels in the Order vector
-  filter(Label %in% Order) %>%
-  # Convert Label to factor with specific order
-  mutate(Label = factor(Label, levels = Order)) %>%
-  ggbarplot( x = "Label", y = "GiniIndex",
-             fill = "Label", lab.pos = "out", xlab = "Sample",
-             ggtheme = theme_pubclean(base_size = 18),
-             palette = Colors) +
-  theme(legend.position = "right")
+ # The %>% operator is the "pipe" from the dplyr/tidyverse packages
+ # It takes the output from the left side and "pipes" it as the first argument to the right side
 
-# Save the plot
-ggsave("MAGeCK-Gini-Index.pdf", 
-       width = 12, 
-       height = 6, 
-       units = "in",
-       dpi = 300)
+ # Filter to only include rows with Labels in the Order vector
+ # This ensures we only plot the samples we're interested in
+ filter(Label %in% Order) %>%
+ 
+ # Convert Label to factor with specific order
+ # mutate() creates new columns based on existing ones
+ # This makes the bars appear in our predefined order rather than alphabetically
+ mutate(Label = factor(Label, levels = Order)) %>%
+ 
+ # Create a bar plot with ggpubr's ggbarplot function
+ # The result of our previous operations (filtered and mutated data) is automatically
+ # passed as the first argument to ggbarplot
+ ggbarplot(x = "Label",              # X-axis: sample labels
+           y = "GiniIndex",          # Y-axis: Gini index values
+           fill = "Label",           # Color bars by sample
+           lab.pos = "out",          # Position labels outside the bars
+           xlab = "Sample",          # X-axis title
+           ggtheme = theme_pubclean(base_size = 18),  # Clean publication-ready theme with larger text
+           palette = Colors) +       # Use our custom color palette defined earlier
+           
+ # Adjust the legend position to the right side of the plot
+ theme(legend.position = "right")
+
+# Save the plot as a PDF file
+ggsave("MAGeCK-Gini-Index.pdf",  # Filename
+      width = 12,                # Width in inches
+      height = 6,                # Height in inches
+      units = "in",              # Units (inches)
+      dpi = 300)                 # Resolution (300 dots per inch, publication quality)
+
+# Note: The Gini index measures guide RNA distribution inequality
+# Lower values indicate more uniform distribution (better quality)
+# Higher values suggest some guides are overrepresented (potential bias)
 
 ```
 
 # Lost sgRNA
-```{r}
+```{r warning=FALSE}
 
-# Create the plot
+# Create a bar plot showing the number of zero-count sgRNAs for each sample
 missed_plot <- ggbarplot(count_summary,
-                         x = "Label", 
-                         y = "Zerocounts",
-                         fill = "Label", 
-                         lab.pos = "out", 
-                         xlab = "Sample",
-                         ggtheme = theme_pubclean(base_size = 18),
-                         palette = Colors) +
-  theme(legend.position = "right")
+                        x = "Label",            # X-axis: sample labels
+                        y = "Zerocounts",       # Y-axis: number of sgRNAs with zero counts
+                                                # This indicates guides that were not detected in sequencing
+                        fill = "Label",         # Color bars by sample using the Label column
+                        lab.pos = "out",        # Position count labels outside the bars
+                        xlab = "Sample",        # X-axis title
+                        ggtheme = theme_pubclean(base_size = 18),  # Clean publication-ready theme with larger text
+                        palette = Colors) +     # Use our custom color palette defined earlier
+ 
+ # Adjust the legend position to the right side of the plot
+ theme(legend.position = "right")
 
-# Save the plot
-ggsave("MAGeCK-Lost-sgRNAs.pdf", 
-       plot = missed_plot,
-       width = 12, 
-       height = 6, 
-       units = "in", 
-       dpi = 300)
+# Note: Unlike the previous plot, we're saving the plot to a variable first
+# This is useful when you want to modify the plot further or reuse it
+
+# Save the plot as a PDF file
+ggsave("MAGeCK-Lost-sgRNAs.pdf",  # Filename indicating this shows lost/missing sgRNAs
+      plot = missed_plot,         # Specify which plot to save (the one we created above)
+      width = 12,                 # Width in inches
+      height = 6,                 # Height in inches
+      units = "in",               # Units (inches)
+      dpi = 300)                  # Resolution (300 dots per inch, publication quality)
+
+# The Zerocounts metric is important for quality control
+# It shows how many guide RNAs were completely lost (zero reads) in each sample
+# Higher numbers indicate potential issues with library complexity or coverage
+# Ideally, most guides should have at least 300 counts. 
 
 ```
 
 # Ratio of mapped reads
-```{r}
+```{r warning=FALSE}
 
 # Calculate mapped and unmapped reads with percentages
 plot_data <- count_summary %>%
-  mutate(Mapped = round(Reads * Percentage),
-         Unmapped = Reads - Mapped,
-         Mapped_Percentage = round(Percentage * 100),
-         Unmapped_Percentage = round((1 - Percentage) * 100)) %>%
-  select(Label, Mapped, Unmapped, Mapped_Percentage, Unmapped_Percentage) %>%
-  tidyr::pivot_longer(cols = c(Mapped, Unmapped), names_to = "category", values_to = "count") %>%
-  mutate(Label = factor(Label, levels = Order),
-         category = factor(category, levels = c("Unmapped", "Mapped")),
-         percentage = ifelse(category == "Mapped", Mapped_Percentage, Unmapped_Percentage))
+ # mutate() creates new columns based on existing ones
+ mutate(
+   # Calculate number of mapped reads by multiplying total reads by mapping percentage
+   Mapped = round(Reads * Percentage),
+   # Calculate unmapped reads by subtracting mapped from total
+   Unmapped = Reads - Mapped,
+   # Convert mapping percentage to whole numbers (0-100 scale)
+   Mapped_Percentage = round(Percentage * 100),
+   # Calculate unmapped percentage by subtracting from 100
+   Unmapped_Percentage = 100 - Mapped_Percentage
+ ) %>%
+ # dplyr::select() keeps only the columns we need for plotting
+ # We use dplyr:: prefix to avoid conflicts with other packages
+ dplyr::select(Label, Mapped, Unmapped, Mapped_Percentage, Unmapped_Percentage) %>%
+ # tidyr::pivot_longer() reshapes data from wide to long format
+ # This is necessary for stacked bar plots in ggplot2
+ tidyr::pivot_longer(
+   cols = c(Mapped, Unmapped),  # columns to reshape
+   names_to = "category",       # new column for category names
+   values_to = "count"          # new column for count values
+ ) %>%
+ # Add additional information needed for plotting
+ mutate(
+   # Set the order of sample labels using the Order vector
+   Label = factor(Label, levels = Order),
+   # Set the order of categories (unmapped shown first/bottom in stacked bars)
+   category = factor(category, levels = c("Unmapped", "Mapped")),
+   # Create percentage column for text labels inside bars
+   percentage = ifelse(category == "Mapped", Mapped_Percentage, Unmapped_Percentage)
+ )
 
-# Map ratio plot
-ggbarplot(plot_data, x = "Label", y = "count",
-          fill = "category", color = "category",
-          palette = c("#813e3e", "#005073"),
-          position = position_stack(),
-          xlab = "", ylab = "Reads") +
-  geom_text(aes(label = sprintf("%d%%", percentage), group = category), 
-            position = position_stack(vjust = 0.5), color = "white", size = 3.5) +
-  theme_pubclean(base_size = 18) +
-  theme(legend.position = "right")
+# Get maximum count to determine appropriate y-axis breaks
+max_count <- max(plot_data$count)
+# Calculate number of millions to show (rounded up to next million)
+max_millions <- ceiling(max_count/1000000)
+# Create breaks at every 1 million
+million_breaks <- seq(0, max_millions * 1000000, by = 1000000)
 
-# Save the plot
-ggsave("MAGeCK-Mapped-Ratio.pdf", 
-       width = 12, 
-       height = 7, 
+# Create stacked bar plot showing mapped vs unmapped reads
+# ggbarplot() is from ggpubr package - an extension of ggplot2 for publication-ready plots
+ggbarplot(plot_data, 
+         x = "Label",           # samples on x-axis
+         y = "count",           # read counts on y-axis
+         fill = "category",     # color bars by mapped/unmapped status
+         color = "category",    # outline color matches fill
+         # Set custom colors: brown for unmapped, blue for mapped
+         palette = c("#813e3e", "#005073"),
+         # position_stack() creates stacked bars instead of grouped
+         position = position_stack(),
+         xlab = "",             # no x-axis label needed
+         ylab = "Reads (millions)") +  # y-axis label with units
+ # Add percentage text labels inside the bars
+ geom_text(aes(label = sprintf("%d%%", percentage), group = category), 
+           # Center text in each segment
+           position = position_stack(vjust = 0.5), 
+           color = "white",     # white text for better visibility
+           size = 3.5) +        # text size
+ # Set explicit breaks at every million and format labels with M suffix
+ scale_y_continuous(
+   breaks = million_breaks,
+   labels = function(x) paste0(x/1000000, "M")
+ ) +
+ # theme_pubclean() from ggpubr creates a clean look for publications
+ theme_pubclean(base_size = 18) +
+ # Place legend on right side of plot
+ theme(legend.position = "right")
+
+# Save the plot as a PDF file
+ggsave(
+ "MAGeCK-Mapped-Ratio.pdf",    # output filename
+ width = 12,                    # width in inches
+ height = 7,                    # height in inches
+ units = "in",                  # unit for dimensions
+ dpi = 300                      # resolution (dots per inch)
+)
+
+
+```
+
+# Principal Component Analysis
+```{r warning=FALSE}
+
+# Step 1: Prepare the count matrix for PCA
+# First, we need to extract just the numeric count data
+count_matrix <- norm_count_data %>%
+ dplyr::select(-sgRNA, -Gene) %>%  # Remove the guide RNA names and gene columns
+ as.matrix()                       # Convert from data frame to numeric matrix
+# This gives us a matrix with each row = one sgRNA and each column = one sample
+
+# Step 2: Apply log2 transformation to make the data more suitable for PCA
+# Why log2 transform?
+# - CRISPR count data spans many orders of magnitude (from 0 to millions)
+# - Log transformation makes the distribution more even
+# - It reduces the impact of extremely high counts
+log2_matrix <- log2(count_matrix + 1)  # We add 1 before taking log2 to handle zeros
+                                     # (log2(0) is undefined, but log2(1) = 0)
+
+# Step 3: Perform Principal Component Analysis
+# PCA finds the main patterns of variation in our data
+pca_result <- prcomp(t(log2_matrix), scale. = FALSE)
+# We use transpose (t) because we want to analyze relationships between samples
+# not between sgRNAs. This makes columns=sgRNAs and rows=samples
+# scale=FALSE because we already transformed our data with log2
+
+# Step 4: Extract PCA results and prepare for plotting
+pca_df <- as.data.frame(pca_result$x)  # Extract the principal components
+
+# Add sample identifiers and grouping information
+pca_df$Sample <- colnames(count_matrix)  # Add sample names from our original data
+
+# Add Day information (D0 or D21) based on sample names
+pca_df$Day <- c(rep("D0", 2),           # First 2 samples are Day 0 controls
+              rep("D21", 7))           # Remaining 7 samples are Day 21
+
+# Group samples by experimental condition
+pca_df$Type <- c(rep("In Vitro", 2),    # First 2 samples (D0) are in vitro
+               rep("In Vitro", 2),     # Next 2 (IVR1, IVR2) are in vitro
+               rep("In Vivo", 5))      # Last 5 are in vivo xenograft samples
+
+# Step 5: Define color scheme for different sample types
+# Using consistent colors helps visually identify sample groups
+pca_colors <- c(
+ "In Vitro" = "#4b4380",   # Purple for in vitro samples 
+ "In Vivo" = "#4a7ebb"     # Blue for in vivo xenograft samples
+)
+
+# Step 6: Create the PCA visualization using both shape and color
+# This plot will show how similar the samples are to each other
+pca_plot <- ggplot(pca_df, aes(x = PC1, y = PC2)) +
+ # Create points with different shapes and fills
+ geom_point(aes(fill = Type,         # Fill by sample type 
+                shape = Day),        # Shape by day
+            size = 7,                # Large points are easier to see  
+            color = "black",         # Black border for all points
+            stroke = 0.5) +          # Border thickness
+ 
+ # Apply our color scheme for fills
+ scale_fill_manual(values = pca_colors) +
+ 
+ # Use shapes that can take both stroke and fill
+ scale_shape_manual(values = c("D0" = 21,    # Circle with fill
+                              "D21" = 22)) + # Square with fill
+                               
+ # Customize legends to ensure they display correctly
+ guides(
+   # Type legend: show appropriate fill colors with black borders
+   fill = guide_legend(override.aes = list(shape = 21)),
+   
+   # Day legend: show shape differences with consistent fill
+   shape = guide_legend(override.aes = list(fill = "black"))
+ ) +
+ 
+ # Add sample labels above each point
+ geom_text(aes(label = Sample),      # Use sample names as labels
+           size = 2,                 # Text size
+           vjust = -1.5) +           # Position text above points
+ 
+ # Use a clean theme for publication
+ theme_pubr(base_size = 18, border = TRUE) +
+ 
+ # Add informative axis labels that show % variance explained
+ labs(
+   title = "PCA",
+   # Show how much variation each component explains
+   x = paste0("PC1 (", round(summary(pca_result)$importance[2,1] * 100, 1), "%)"),
+   y = paste0("PC2 (", round(summary(pca_result)$importance[2,2] * 100, 1), "%)")
+ ) +
+ 
+ # Final theme adjustments
+ theme(
+   legend.position = "right",      # Put legend on right side
+   plot.title = element_text(hjust = 0.5)  # Center the title
+ )
+
+# Display the plot in R
+print(pca_plot)
+
+# Save the plot as a PDF file
+ggsave("MAGeCK-PCA-Plot.pdf",   # Filename 
+      plot = pca_plot,         # Plot to save
+      width = 7,               # Width in inches 
+      height = 7,              # Height in inches (square plot)
+      units = "in",            # Units (inches)
+      dpi = 300)               # Resolution (300 dpi for publication quality)
+
+# What to look for in your PCA plot:
+# - Points with different shapes represent different time points:
+#   * Circles (shape 21) = Day 0 samples
+#   * Squares (shape 22) = Day 21 samples
+# - Fill colors represent different growth conditions:
+#   * Purple fill = In Vitro samples
+#   * Blue fill = In Vivo (xenograft) samples
+# - Samples that cluster together are more similar in their sgRNA distributions
+# - This dual encoding (shape + color) helps visualize both time and condition effects
+
+```
+
+# Corrplot
+```{r}
+
+# Calculate correlation matrix from log2-transformed counts
+# Purpose: Visualize sample similarity/clustering based on sgRNA patterns
+
+# Step 1: Calculate correlation between samples directly
+# This computes Pearson correlation between all sample pairs
+sampleCorrelation <- cor(log2_matrix)
+
+# Step 3: Create correlation heatmap using corrplot
+# - order='hclust' performs hierarchical clustering to group similar samples
+# - addrect=3 adds rectangles around 3 main clusters for easier interpretation
+corrplot(sampleCorrelation, 
+         method = "color",     # use colored cells
+         order = "hclust",     # order by hierarchical clustering
+         addrect = 7,          # highlight 3 main clusters with rectangles
+         tl.col = "black",     # black text labels
+         tl.cex = 0.7)         # reduce text label size for readability
+
+
+```
+
+
+# Parallel plot
+```{r warning=FALSE}
+
+# Step 1: Reshape and prepare the data for visualization
+# We start with the normalized count data and prepare it for parallel coordinates plotting
+plot_data <- norm_count_data %>%
+  # Select only the sgRNA identifiers, gene names, and count columns for all samples
+  dplyr::select(sgRNA, Gene, D0R1, D0R2, IVR1, IVR2, XENOR1, XENOR2, XENOR3, XENOR4, XENOR5) %>%
+  
+  # Step 2: Apply log2 transformation to improve visualization
+  mutate(across(-c(sgRNA, Gene), ~log2(.x + 1))) %>%  # Add 1 to handle zeros
+  
+  # Step 3: Reshape data from wide to long format for plotting
+  # This creates a row for each sgRNA-sample combination
+  pivot_longer(
+    -c(sgRNA, Gene),       # Keep sgRNA and Gene as identifiers
+    names_to = "Sample",   # Sample names go into the Sample column
+    values_to = "Count"    # Count values go into the Count column
+  ) %>%
+  
+  # Step 4: Ensure samples appear in the desired order on the plot
+  # This orders samples by experimental condition and timepoint
+  mutate(Sample = factor(Sample, levels = c(
+    "D0R1", "D0R2",                                  # Day 0 samples first (baseline)
+    "IVR1", "IVR2",                                  # Then In Vitro Day 21 samples
+    "XENOR1", "XENOR2", "XENOR3", "XENOR4", "XENOR5" # Then In Vivo Day 21 samples
+  )))
+
+# Step 5: Create combined visualization with parallel coordinates and points
+# This visualization shows both:
+#  - The overall distribution of sgRNA counts
+#  - The sample-to-sample changes for individual sgRNAs
+combined_plot <- ggplot(plot_data, 
+                        aes(x = Sample, 
+                            y = Count, 
+                            group = sgRNA)) +
+  # Add parallel coordinates lines as background
+  # Each line represents one sgRNA tracked across all samples
+  geom_line(aes(color = Sample),
+            alpha = 0.40,             # Transparency allows many lines to be visible
+            linewidth = 0.40) +       # Using linewidth instead of size
+
+  # Add points for each sgRNA measurement
+  # Points help visualize the density of measurements at different count levels
+  geom_point( aes(color = Sample, fill = Sample),
+              alpha = 0.40,           # Partial transparency to show density
+              color = "black",        # Black outline
+              shape = 21,             # Circle with fill
+              stroke = 0.2,           # Thin border
+              size = 2) +             # Medium-sized points
+
+  # Apply the color scheme to elements
+  scale_color_manual(values = Colors) +  # For line colors
+  scale_fill_manual(values = Colors) +   # For point fill colors
+  
+  # Use a clean theme suitable for publication
+  theme_pubclean(base_size = 16) +
+  
+  # Fine-tune the theme elements
+  theme(axis.text.x = element_text(angle = 0, size = 14),  # labels for readability
+        axis.text.y = element_text(size = 14),             # Y-axis text size
+        legend.position = "none") +                        # Hide legend to reduce clutter
+  
+  # Add informative axis labels
+  labs(x = "Samples",                # X-axis = sample names
+       y = "log2(Count + 1)")        # Y-axis = log-transformed counts
+
+# Step 6: Save the visualization as a high-quality PDF
+# This creates a file suitable for publication or presentation
+pdf(file = "MAGeCK-Parallel_Plot.pdf", 
+    width = 10,            # Wide format to accommodate all samples
+    height = 6,            # Height provides good proportions
+    compress = TRUE,       # Reduce file size
+    useDingbats = FALSE)   # Better compatibility with publishing software
+print(combined_plot)       # Send the plot to the PDF device
+dev.off()                  # Close the PDF device
+
+# Step 6: Save the visualization as a PNG
+ggsave(filename =  "MAGeCK-Parallel_Plot.png", 
+       width = 10,
+       height = 6,
        units = "in", 
        dpi = 300)
 
+# What to look for in this combined visualization:
+# - Day 0 to Day 21 changes: Overall shifts in sgRNA abundance over time
+# - In Vitro vs In Vivo differences: How growth environment affects sgRNA selection
+# - Consistency: How well replicates (R1/R2) match within each condition
+# - Outliers: sgRNAs with unusual patterns may represent genes with strong phenotypes
+# - Selection intensity: Steeper lines indicate stronger selection pressures
+# - Point density: Where most sgRNAs cluster at each timepoint/condition
+# - Xenograft heterogeneity: Variation across the five xenograft samples
+
+```
+
+
+# Volcano plot
+```{r warning=FALSE}
+
+# Define a function to create consistent volcano plots
+create_volcano_plot <- function(data, title, output_filename) {
+  # Significance thresholds
+  pvalue_threshold <- -log10(0.05)  # -log10 transformed p-value of 0.05
+  fdr_threshold <- -log10(0.05)     # -log10 transformed FDR of 0.05
+  
+  # Calculate counts of significant genes
+  sig_pval_neg <- sum(-log10(data$neg.p.value) > pvalue_threshold, na.rm = TRUE)
+  sig_both_neg <- sum(-log10(data$neg.p.value) > pvalue_threshold & 
+                      -log10(data$neg.fdr) > fdr_threshold, na.rm = TRUE)
+  
+  sig_pval_pos <- sum(-log10(data$pos.p.value) > pvalue_threshold, na.rm = TRUE)
+  sig_both_pos <- sum(-log10(data$pos.p.value) > pvalue_threshold & 
+                      -log10(data$pos.fdr) > fdr_threshold, na.rm = TRUE)
+  
+  # For the plot, we'll use negative LFC values for the negative selection
+  # Create a new dataframe for plotting
+  plot_data <- data.frame(
+    id = c(data$id, data$id),
+    lfc = c(data$neg.lfc, data$pos.lfc),
+    p_value = c(data$neg.p.value, data$pos.p.value),
+    fdr = c(data$neg.fdr, data$pos.fdr),
+    selection = c(rep("Negative", nrow(data)), rep("Positive", nrow(data)))
+  )
+  
+  # Create color categories
+  plot_data$color_category <- "Non-significant"
+  plot_data$color_category[
+    -log10(plot_data$p_value) > pvalue_threshold
+  ] <- "P-value"
+  plot_data$color_category[
+    -log10(plot_data$p_value) > pvalue_threshold & 
+    -log10(plot_data$fdr) > fdr_threshold
+  ] <- "Both"
+  
+  # Highlight MEN1 if present
+  men1_rows <- which(plot_data$id == "MEN1")
+  if(length(men1_rows) > 0) {
+    plot_data$color_category[men1_rows] <- "MEN1"
+  }
+  
+  # Create the volcano plot
+  volcano_plot <- ggplot(plot_data, 
+                        aes(x = lfc, y = -log10(p_value))) +
+    # Layer 1: All non-significant points in grey
+    geom_point(data = subset(plot_data, color_category == "Non-significant"),
+               size = 2, shape = 21, fill = "#D3D3D3", color = "black", alpha = 0.7) +
+    # Layer 2: Significant points colored by category
+    geom_point(data = subset(plot_data, color_category %in% c("P-value", "Both", "MEN1")),
+               aes(fill = color_category),
+               size = 2.5, shape = 21, color = "black") +
+    # Reference lines
+    geom_vline(xintercept = 0, linetype = "dashed", color = "grey50") +
+    geom_hline(yintercept = pvalue_threshold, linetype = "dashed", color = "grey50") +
+    # Colors for different significance categories
+    scale_fill_manual(values = c("P-value" = "#9AB7D3",
+                                "Both" = "#c76706",
+                                "Non-significant" = "#D3D3D3",
+                                "MEN1" = "#FF0000")) +
+    # Facet by selection type (negative/positive)
+    facet_wrap(~selection) +
+    # Labels and title
+    labs(x = expression(Log[2]~"Fold Change"), 
+         y = expression(-log[10]~"(p-value)"),
+         title = title,
+         subtitle = paste0(
+           "Negative selection - p-value < 0.05: ", sig_pval_neg, 
+           ", with FDR < 0.05: ", sig_both_neg, "\n",
+           "Positive selection - p-value < 0.05: ", sig_pval_pos, 
+           ", with FDR < 0.05: ", sig_both_pos
+         )) +
+    # Theme settings for publication quality
+    theme_pubr(border = FALSE, legend = 'right', base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      plot.subtitle = element_text(hjust = 0.5, size = 10),
+      strip.background = element_rect(fill = "white"),
+      strip.text = element_text(size = 12, face = "bold"),
+      legend.title = element_blank()
+    ) +
+    # Set axis limits for consistency across plots
+    xlim(-7, 7) +
+    ylim(0, 6)
+  
+  # Save the plot to file
+  ggsave(filename = output_filename, plot = volcano_plot,
+         width = 9, height = 6, dpi = 300)
+  
+  # Return the plot for display
+  return(volcano_plot)
+}
+
+#------------------------------------------------------------
+# Create volcano plots for each comparison
+#------------------------------------------------------------
+
+# 1. In vitro comparison (Day 0 vs Day 21)
+# This plot shows genes essential for cell survival in vitro
+in_vitro_volcano <- create_volcano_plot(
+  in_vitro_comparison,
+  "In Vitro Comparison (Day 0 vs Day 21)",
+  "In_Vitro_Volcano_Plot.pdf"
+)
+
+# 2. In vivo comparison (Day 0 vs Day 21 Xenograft)
+# This plot shows genes essential for tumor growth in mice
+in_vivo_volcano <- create_volcano_plot(
+  in_vivo_comparison,
+  "In Vivo Comparison (Day 0 vs Day 21 Xenograft)",
+  "In_Vivo_Volcano_Plot.pdf"
+)
+
+# 3. Direct comparison (Day 21 in vitro vs Day 21 Xenograft)
+# This plot reveals genes with differential effects between
+# cell culture and tumor microenvironment (like MEN1)
+direct_volcano <- create_volcano_plot(
+  direct_comparison,
+  "Direct Comparison (In Vitro vs In Vivo at Day 21)",
+  "Direct_Comparison_Volcano_Plot.pdf"
+)
+
+# Display all three plots
+in_vitro_volcano
+in_vivo_volcano
+direct_volcano
+
+
+# A volcano plot shows:
+#  - X-axis: Log2 fold change (how much a gene's knockout affects growth)
+#  - Y-axis: Statistical significance (-log10 of p-value)
+#
+# NEGATIVE SELECTION (left panel):
+#  - Points in upper left: Genes that reduce growth when knocked out
+#  - These are essential genes (their absence hurts cell/tumor growth)
+#
+# POSITIVE SELECTION (right panel):
+#  - Points in upper right: Genes that increase growth when knocked out
+#  - These are growth suppressors (their presence limits growth)
+#
+# The coloring shows:
+#  - Grey: Non-significant changes
+#  - Blue: Significant by p-value only
+#  - Orange: Significant by both p-value and FDR (more reliable)
+#  - Red: MEN1 gene (highlighted as the key finding)
+#
+# For the direct comparison:
+#  - MEN1 appears in positive selection, meaning its knockout
+#    promotes tumor growth in vivo but not in vitro
+#  - This indicates MEN1's unique role in tumor-microenvironment
+#    interactions, which is the paper's main finding
 
 ```
 
